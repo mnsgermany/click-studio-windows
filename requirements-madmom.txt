@@ -1,0 +1,2 @@
+# same source as the Mac build (prepare_engine.sh)
+madmom @ git+https://github.com/CPJKU/madmom.git

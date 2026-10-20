@@ -49,17 +49,44 @@ def find_ffmpeg(hint):
     return None
 
 
+def decode_av(path):
+    """Windows: PyAV (FFmpeg libraries bundled with the app) decodes M4A/AAC/ALAC/WMA/OPUS and video."""
+    import av
+    import numpy as np
+    chunks, sr = [], None
+    with av.open(path) as f:
+        stream = f.streams.audio[0]
+        res = av.AudioResampler(format="flt", layout="stereo")
+        for frame in f.decode(stream):
+            sr = sr or frame.sample_rate
+            for fr in res.resample(frame):
+                chunks.append(fr.to_ndarray().reshape(-1, 2))
+        for fr in res.resample(None):
+            chunks.append(fr.to_ndarray().reshape(-1, 2))
+    if not chunks:
+        raise RuntimeError("no audio")
+    return np.concatenate(chunks).astype(np.float32), sr
+
+
 def load_audio(path, ff_hint, tmp):
-    """Stereo float32 at SR. libsndfile reads MP3/WAV/FLAC/OGG/AIFF; macOS afconvert covers M4A/AAC/ALAC;
-    ffmpeg (if the user has it) is only a last resort for video and rare formats."""
+    """Stereo float32 at SR. libsndfile reads MP3/WAV/FLAC/OGG/AIFF; macOS afconvert (Windows: bundled PyAV)
+    covers M4A/AAC/ALAC; ffmpeg (if the user has it) is only a last resort for video and rare formats."""
     import numpy as np
     import soundfile as sf
     try:
         x, sr = sf.read(path, dtype="float32", always_2d=True)
     except Exception:
+        x = None
+        if sys.platform == "win32":
+            try:
+                x, sr = decode_av(path)
+            except Exception:
+                x = None
+    if x is None:
         w = os.path.join(tmp, "decoded.wav")
-        r = subprocess.run(["/usr/bin/afconvert", "-f", "WAVE", "-d", "LEF32", path, w], capture_output=True)
-        if r.returncode:
+        r = subprocess.run(["/usr/bin/afconvert", "-f", "WAVE", "-d", "LEF32", path, w],
+                           capture_output=True) if sys.platform == "darwin" else None
+        if r is None or r.returncode:
             ff = find_ffmpeg(ff_hint)
             if not ff:
                 raise RuntimeError(L("Не удалось прочитать файл: такой формат не поддерживается",

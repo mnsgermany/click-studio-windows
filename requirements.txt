@@ -1,0 +1,10 @@
+numpy
+scipy
+soundfile>=0.12.1
+cython
+mido
+PySide6-Essentials>=6.7
+sounddevice>=0.4.6
+av>=12
+cryptography>=42
+pyinstaller>=6.6
