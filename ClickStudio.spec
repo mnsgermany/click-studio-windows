@@ -20,7 +20,9 @@ for pkg in ("madmom", "numpy", "scipy", "soundfile", "av"):
 engine = Analysis(["engine/click_engine.py"], pathex=["engine"],
                   datas=engine_datas,
                   binaries=collect_dynamic_libs("soundfile") + collect_dynamic_libs("av"),
-                  hiddenimports=collect_submodules("madmom") + collect_submodules("av") + ["soundfile", "scipy.signal",
+                  # madmom's model pickles name numpy.core.* (numpy 2 keeps it as a shim the analysis does not see)
+                  hiddenimports=collect_submodules("madmom") + collect_submodules("av") + collect_submodules("numpy.core")
+                  + ["soundfile", "scipy.signal",
                                                                                         "scipy.ndimage"],
                   excludes=["tkinter", "PySide6", "matplotlib", "IPython", "pytest"])
 
