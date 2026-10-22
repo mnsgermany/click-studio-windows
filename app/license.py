@@ -9,7 +9,7 @@ PREFIX = "ClickStudio-1"
 SALT = "clickstudio|"
 REQUEST_EXT = ".csreq"
 REQUEST_NAME = "ClickStudio-request" + REQUEST_EXT
-TRIAL_SECONDS = 5 * 60
+TRIAL_RENDERS = 3  # clicks a user may save without a key, once per computer (not per launch)
 BOT_URL = ""  # the sales bot link; the button is hidden while empty
 # PKCS#1 DER, base64 (public half of the author's private.pem, same as the Mac version)
 PUBLIC_KEY = (
@@ -122,6 +122,52 @@ def load():
 def save(email, key):
     with open(license_path(), "w", encoding="utf-8") as f:
         json.dump({"email": clean_email(email), "key": re.sub(r"\s", "", key)}, f)
+
+
+REG_KEY = r"Software\Click Studio"
+
+
+def _trial_file():
+    return os.path.join(data_dir(), "trial.json")
+
+
+def _trial_reg(value=None):
+    """Second copy of the counter in HKCU, so deleting the settings folder does not reset the trial."""
+    if sys.platform != "win32":
+        return 0
+    import winreg
+    try:
+        if value is None:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_KEY) as k:
+                return int(winreg.QueryValueEx(k, "Renders")[0])
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, REG_KEY) as k:
+            winreg.SetValueEx(k, "Renders", 0, winreg.REG_DWORD, int(value))
+    except (OSError, ValueError):
+        pass
+    return 0
+
+
+def trial_used():
+    try:
+        with open(_trial_file(), encoding="utf-8") as f:
+            n = int(json.load(f).get("renders", 0))
+    except (OSError, ValueError, AttributeError):
+        n = 0
+    return max(n, _trial_reg())
+
+
+def set_trial_used(n):
+    n = max(0, int(n))
+    try:
+        with open(_trial_file(), "w", encoding="utf-8") as f:
+            json.dump({"renders": n}, f)
+    except OSError:
+        pass
+    _trial_reg(n)
+
+
+def trial_left():
+    return max(0, TRIAL_RENDERS - trial_used())
 
 
 def cli(argv):

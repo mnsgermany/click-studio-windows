@@ -46,6 +46,17 @@ with tempfile.TemporaryDirectory() as d:
     os.environ["APPDATA"] = d
     lic.save(" Buyer@Example.com ", key)
     assert lic.load() == ("buyer@example.com", key)
+    # trial: 3 clicks per computer, kept on disk (and in HKCU on Windows)
+    lic.REG_KEY = r"Software\Click Studio Test"
+    lic.set_trial_used(0)
+    assert lic.trial_left() == 3
+    lic.set_trial_used(2)
+    assert lic.trial_used() == 2 and lic.trial_left() == 1
+    if sys.platform == "win32":
+        os.remove(os.path.join(d, "Click Studio", "trial.json"))
+        assert lic.trial_used() == 2, "deleting the settings folder must not reset the trial"
+        import winreg
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, lic.REG_KEY)
 
 # CLI against the real embedded key: a test signature must be rejected
 lic.PUBLIC_KEY = real_key

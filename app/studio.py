@@ -384,6 +384,9 @@ class Studio(QObject):
     preview_state = Signal(str)  # job id whose preview state changed
     demo_state = Signal()
     all_done = Signal()
+    trial_changed = Signal()     # a trial click was used or given back
+    trial_exhausted = Signal()   # a save was asked for with no trial clicks left
+
 
     def __init__(self):
         super().__init__()
@@ -396,6 +399,8 @@ class Studio(QObject):
         self.preview_error = {}
         self.max_parallel = max(1, min(4, (os.cpu_count() or 4) // 3))
         self.processes = {}
+        self.licensed = False  # set by the window once the key checks out
+        self._trial_jobs = set()  # running renders that took a trial click
         self._preview_proc = None
         self._demo_proc = None
         self.previewing_demo = False
@@ -443,6 +448,7 @@ class Studio(QObject):
         p = self.processes.pop(job.id, None)
         if p:
             p.stop()
+            self._refund(job.id)
         if self.player.job_id == job.id:
             self.player.stop()
         self.jobs = [j for j in self.jobs if j.id != job.id]
@@ -485,6 +491,7 @@ class Studio(QObject):
         self.running = False
         for jid, p in list(self.processes.items()):
             p.stop()
+            self._refund(jid)
             j = self.job(jid)
             if j:
                 j.status = "cancelled"
@@ -503,11 +510,29 @@ class Studio(QObject):
             nxt = next((j for j in self.jobs if j.status == "queued"), None)
             if not nxt:
                 break
+            if not self.licensed:  # trial: 3 saved clicks per computer, ever
+                if lic.trial_left() <= 0:
+                    for j in self.jobs:
+                        if j.status == "queued":
+                            j.status = "idle"
+                            self.job_changed.emit(j.id)
+                    self.trial_exhausted.emit()
+                    break
+                lic.set_trial_used(lic.trial_used() + 1)
+                self._trial_jobs.add(nxt.id)
+                self.trial_changed.emit()
             self._launch(nxt)
         if not self.processes:
             self.running = False
             self.running_changed.emit()
             self.all_done.emit()
+
+    def _refund(self, jid):
+        """A render that failed or was stopped does not use up a trial click."""
+        if jid in self._trial_jobs:
+            self._trial_jobs.discard(jid)
+            lic.set_trial_used(lic.trial_used() - 1)
+            self.trial_changed.emit()
 
     def _unique_name(self, base, folder):
         taken = {self.job(i).output_name(self.settings.layout) for i in self.processes if self.job(i)}
@@ -553,6 +578,9 @@ class Studio(QObject):
                 j.error = (L("Движок завершился без результата", "The engine finished without a result") if code == 0
                            else L(f"Ошибка анализа (код {code})", f"Analysis error (code {code})"))
                 self.job_changed.emit(jid)
+            if not j or j.status != "done":
+                self._refund(jid)
+            self._trial_jobs.discard(jid)
             self._pump()
 
         p.line.connect(on_line)

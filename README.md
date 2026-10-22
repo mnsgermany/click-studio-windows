@@ -11,7 +11,9 @@ Windows 10/11, 64 бит.
 ## Лицензия
 Как на Mac: `ClickStudio-1|<e-mail>|<код компьютера>`, RSA PKCS#1 v1.5 + SHA-256, ключ в base64.
 Код компьютера: первые 16 hex от SHA-256(`clickstudio|uuid:<SMBIOS UUID>`), запасные `guid:<MachineGuid>`, `host:<имя>`.
-Без лицензии всё работает 5 минут после каждого запуска, потом «Слушать» и «Сохранить» открывают окно «Лицензия…».
+Без лицензии можно сохранить 3 клика — один раз на компьютер, перезапуск и переустановка не сбрасывают счётчик
+(`%APPDATA%\Click Studio\trial.json` и `HKCU\Software\Click Studio\Renders`, берётся большее). Неудачный или
+остановленный рендер клик не тратит. Слушать можно всегда; после 3 кликов «Сохранить» открывает окно «Лицензия…».
 Файл запроса `.csreq`. Служебные флаги: `"Click Studio.exe" --machine-code`, `--check-license email key [code]`.
 Лицензия хранится в `%APPDATA%\Click Studio\license.json`, кеш анализа — в `%LOCALAPPDATA%\Click Studio\cache`.
 

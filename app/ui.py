@@ -1091,10 +1091,12 @@ class LicenseDialog(QDialog):
             v.addLayout(row)
             self.state.setText(L("Спасибо за покупку!", "Thank you for your purchase!"))
             return
-        intro = lbl(L("Без лицензии программа полностью работает 5 минут после каждого запуска. "
-                      "Лицензия привязана к этому компьютеру.",
-                      "Without a licence the app works fully for 5 minutes after each launch. "
-                      "The licence is bound to this computer."), "sec", wrap=True)
+        intro = lbl(L(f"Без лицензии можно сохранить {lic.TRIAL_RENDERS} клика. Это один раз, перезапуск не добавляет новых. "
+                      "Слушать песни с кликом можно всегда. Лицензия привязана к этому компьютеру.",
+                      f"Without a licence you can save {lic.TRIAL_RENDERS} clicks. This is a one-time allowance; "
+                      "restarting does not add more. Listening is always free. The licence is bound to this computer."),
+                    "sec", wrap=True)
+        intro.setMinimumHeight(intro.heightForWidth(500))
         intro.setFixedWidth(500)
         v.addWidget(intro)
         steps = [L("В боте нажмите «Приобрести лицензию» и оплатите.", "In the bot, tap “Buy licence” and pay."),
@@ -1154,10 +1156,11 @@ class LicenseDialog(QDialog):
         self.tick()
 
     def tick(self):
-        left = self.win.trial_left()
-        self.state.setText(L(f"Пробный режим · осталось {fmt_time(left)}", f"Trial · {fmt_time(left)} left") if left > 0
-                           else L("Пробный режим закончился. Чтобы слушать и сохранять, активируйте программу.",
-                                  "The trial has ended. Activate the app to listen and save."))
+        left = lic.trial_left()
+        self.state.setText(L(f"Пробный режим · осталось кликов: {left} из {lic.TRIAL_RENDERS}",
+                             f"Trial · {left} of {lic.TRIAL_RENDERS} clicks left") if left > 0
+                           else L("Пробные клики закончились. Чтобы сохранять клики, активируйте программу.",
+                                  "The trial clicks are used up. Activate the app to save clicks."))
         if self.win.machine_code and hasattr(self, "code"):
             self.code.setText(lic.pretty(self.win.machine_code))
 
@@ -1255,11 +1258,9 @@ class MainWindow(QMainWindow):
         self.resize(1240, 820)
         self.setAcceptDrops(True)
         self.rows = {}
-        # licence: 5 minutes of full use after every launch, then Listen and Save need a key
-        self.launched = time.monotonic()
+        # licence: 3 saved clicks per computer without a key (kept across restarts), listening stays free
         self.machine_code = ""
         self.license_email, self.licensed = "", False
-        self.expired_shown = False
         self.code_ready.connect(self._got_code)
         threading.Thread(target=lambda: self.code_ready.emit(lic.machine_code()), daemon=True).start()
 
@@ -1274,9 +1275,8 @@ class MainWindow(QMainWindow):
         self.engine.changed.connect(self.engine_changed)
         self._player_job = None
         self.build()
-        self.trial_timer = QTimer(self)
-        self.trial_timer.timeout.connect(self.trial_tick)
-        self.trial_timer.start(1000)
+        self.studio.trial_changed.connect(self.trial_tick)
+        self.studio.trial_exhausted.connect(lambda: QTimer.singleShot(0, self.show_license))
         self.engine.check()
 
     # ------------------------------------------------------------ licence
@@ -1288,17 +1288,15 @@ class MainWindow(QMainWindow):
 
     def set_licensed(self, email):
         self.licensed, self.license_email = True, email
+        self.studio.licensed = True
         self.trial_tick()
 
-    def trial_left(self):
-        return max(0, int(lic.TRIAL_SECONDS - (time.monotonic() - self.launched)))
-
     def allowed(self):
-        return self.licensed or self.trial_left() > 0
+        return self.licensed or lic.trial_left() > 0
 
     def gated(self, action, listen=False):
-        # pausing what already plays is always allowed
-        if self.allowed() or (listen and self.studio.player.playing):
+        # listening is free; saving takes a trial click (Studio counts them as renders start)
+        if listen or self.allowed():
             action()
         else:
             self.show_license()
@@ -1311,16 +1309,12 @@ class MainWindow(QMainWindow):
         if self.licensed:
             b.hide()
             return
-        left = self.trial_left()
-        red = left <= 60
-        col = QColor(C["danger"] if red else C["warning"])
+        left = lic.trial_left()
+        col = QColor(C["danger"] if left <= 1 else C["warning"])
         b.setStyleSheet(f"background: rgba({col.red()},{col.green()},{col.blue()},38); color: {col.name()};")
-        b.setText(L(f"Пробный режим · {fmt_time(left)}", f"Trial · {fmt_time(left)}") if left > 0
-                  else L("Пробный режим закончился", "Trial ended"))
+        b.setText(L(f"Пробный режим · кликов: {left} из {lic.TRIAL_RENDERS}", f"Trial · {left} of {lic.TRIAL_RENDERS} clicks")
+                  if left > 0 else L("Пробный режим закончился", "Trial ended"))
         b.show()
-        if left == 0 and not self.expired_shown:
-            self.expired_shown = True
-            QTimer.singleShot(0, self.show_license)
 
     # ------------------------------------------------------------ layout
     def build(self):
