@@ -73,6 +73,23 @@ jobs:
           path: dist/ClickStudio-Setup-*.exe
           retention-days: 30
 
+      # The engine alone (no app, no Qt): CueDeck bundles it for its own tempo analysis.
+      - name: Standalone engine
+        shell: pwsh
+        run: |
+          $d = "$env:RUNNER_TEMP\click-engine"
+          Copy-Item "dist/Click Studio" $d -Recurse
+          Remove-Item "$d\Click Studio.exe"
+          Remove-Item "$d\_internal\PySide6", "$d\_internal\shiboken6" -Recurse -ErrorAction SilentlyContinue
+          python tests/test_engine.py "$d\click_engine.exe"
+          "{0:N0} MB" -f ((Get-ChildItem $d -Recurse | Measure-Object Length -Sum).Sum / 1MB)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: click-engine-win
+          path: ${{ runner.temp }}/click-engine
+          retention-days: 30
+
       - name: Publish release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
