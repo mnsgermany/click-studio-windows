@@ -121,7 +121,7 @@ def repair(act, A, bpb, a):
     d = np.diff(A[:, 0])
     md = float(np.median(d))
     B = DBNDownBeatTrackingProcessor(beats_per_bar=bpb, fps=100, min_bpm=a.min_bpm, max_bpm=a.max_bpm,
-                                     transition_lambda=1000)(act)
+                                     transition_lambda=1000, num_threads=min(a.threads, len(bpb)))(act)
     if len(B) < 8 or abs(float(np.median(np.diff(B[:, 0]))) / md - 1) > 0.03:
         return A  # the stiff pass locked to another tempo (half/double): keep the flexible one
     bad = np.flatnonzero(np.abs(d / median_filter(d, 17, mode="nearest") - 1) > 0.15)  # live rubato stays under ~10%
@@ -169,9 +169,10 @@ def track(a, song, bpb, tmp):
     mono_wav = os.path.join(tmp, "mono.wav")
     sf.write(mono_wav, song.mean(1), SR, subtype="PCM_16")
     from madmom.features.downbeats import RNNDownBeatProcessor, DBNDownBeatTrackingProcessor
-    act = RNNDownBeatProcessor()(mono_wav)
+    act = RNNDownBeatProcessor(num_threads=a.threads)(mono_wav)  # --threads > 1: the 8 networks run in parallel, same result
     progress("track", 0.6)
-    r = DBNDownBeatTrackingProcessor(beats_per_bar=bpb, fps=100, min_bpm=a.min_bpm, max_bpm=a.max_bpm)(act)
+    r = DBNDownBeatTrackingProcessor(beats_per_bar=bpb, fps=100, min_bpm=a.min_bpm, max_bpm=a.max_bpm,
+                                     num_threads=min(a.threads, len(bpb)))(act)
     if len(r) >= 8:
         r = repair(act, r, bpb, a)
     if cache:
@@ -425,6 +426,7 @@ def main():
     p.add_argument("--midi-channel", type=int, default=10)
     p.add_argument("--min-bpm", type=float, default=55)
     p.add_argument("--max-bpm", type=float, default=215)
+    p.add_argument("--threads", type=int, default=1, help="CPU processes for the analysis (CueDeck turbo mode)")
     p.add_argument("--downbeat-shift", type=int, default=0)
     p.add_argument("--nudge-ms", type=float, default=0)
     p.add_argument("--preview", type=int, default=0)
@@ -456,4 +458,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()  # --threads in the frozen Windows exe: worker processes start from the same exe
     main()

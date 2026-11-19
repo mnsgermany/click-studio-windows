@@ -82,6 +82,7 @@ jobs:
           Remove-Item "$d\Click Studio.exe"
           Remove-Item "$d\_internal\PySide6", "$d\_internal\shiboken6" -Recurse -ErrorAction SilentlyContinue
           python tests/test_engine.py "$d\click_engine.exe"
+          python tests/test_engine.py "$d\click_engine.exe" --threads 4  # turbo: worker processes from the frozen exe
           "{0:N0} MB" -f ((Get-ChildItem $d -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 
       - uses: actions/upload-artifact@v4
